@@ -1,3 +1,10 @@
+# 토스용 wasm 빌드 개발
+- 1.7 버전에서 wasm 모듈 개발을 위한 레포 
+- wasm 빌드 및 envoy 테스트 환경 구축
+- BUILD_WITH_CONTAINER=1 make build_envoy
+- BUILD_WITH_CONTAINER=1 make build_wasm
+- cd test/envoye2e/toss_stats_plugin && go test
+
 # Istio Proxy
 
 The Istio Proxy is a microservice proxy that can be used on the client and server side, and forms a microservice mesh. The Proxy supports a large number of features.

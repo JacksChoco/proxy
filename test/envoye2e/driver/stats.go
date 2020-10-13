@@ -40,6 +40,7 @@ type StatMatcher interface {
 var _ Step = &Stats{}
 
 func (s *Stats) Run(p *Params) error {
+	log.Printf("stats 맞추기 진행")
 	for i := 0; i < 15; i++ {
 		_, body, err := env.HTTPGet(fmt.Sprintf("http://127.0.0.1:%d/stats/prometheus", s.AdminPort))
 		if err != nil {
