@@ -48,6 +48,27 @@ wasm_cc_binary(
 )
 
 wasm_cc_binary(
+    name = "toss_stats.wasm",
+    srcs = [
+        "//extensions/common:context.cc",
+        "//extensions/common:context.h",
+        "//extensions/common:util.cc",
+        "//extensions/common:util.h",
+        "//extensions/toss_stats:plugin.cc",
+        "//extensions/toss_stats:plugin.h",
+    ],
+    copts = ["-UNULL_PLUGIN"],
+    deps = [
+        "//extensions/common:node_info_fb_cc",
+        "//extensions/common/wasm:json_util",
+        "//external:abseil_strings",
+        "//external:abseil_time",
+        "@proxy_wasm_cpp_sdk//:proxy_wasm_intrinsics",
+        "@proxy_wasm_cpp_sdk//contrib:contrib_lib",
+    ],
+)
+
+wasm_cc_binary(
     name = "metadata_exchange.wasm",
     srcs = [
         "//extensions/common:context.cc",
