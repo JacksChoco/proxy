@@ -39,6 +39,7 @@ export REPO_ROOT=/work
 # shellcheck disable=SC2086
 "${CONTAINER_CLI}" run --init -it --rm \
     -u "${UID}:${DOCKER_GID}" \
+    --network=host \
     --sig-proxy=true \
     ${DOCKER_SOCKET_MOUNT:--v /var/run/docker.sock:/var/run/docker.sock} \
     $CONTAINER_OPTIONS \
