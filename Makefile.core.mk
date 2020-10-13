@@ -67,7 +67,7 @@ BAZEL_ENVOY_PATH ?= $(BAZEL_OUTPUT_PATH)/k8-fastbuild/bin/src/envoy/envoy
 CENTOS_BUILD_ARGS ?= --cxxopt -D_GLIBCXX_USE_CXX11_ABI=1 --cxxopt -DENVOY_IGNORE_GLIBCXX_USE_CXX11_ABI_ERROR=1
 # WASM is not build on CentOS, skip it
 # TODO can we do some sort of regex?
-CENTOS_BAZEL_TEST_TARGETS ?= ${BAZEL_TARGETS} -tools/deb/... -tools/docker/... -extensions:stats.wasm -extensions:metadata_exchange.wasm -extensions:attributegen.wasm -extensions:basic_auth.wasm
+CENTOS_BAZEL_TEST_TARGETS ?= ${BAZEL_TARGETS} -tools/deb/... -tools/docker/... -extensions:stats.wasm -extensions:metadata_exchange.wasm -extensions:attributegen.wasm
 
 build:
 	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_DEV) $(BAZEL_TARGETS)
@@ -86,13 +86,11 @@ build_wasm:
 	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_REL) //extensions:toss_stats.wasm
 	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_REL) //extensions:metadata_exchange.wasm
 	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_REL) //extensions:attributegen.wasm
-	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_REL) //extensions:basic_auth.wasm
 	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_REL) @envoy//test/tools/wee8_compile:wee8_compile_tool
 	bazel-bin/external/envoy/test/tools/wee8_compile/wee8_compile_tool bazel-bin/extensions/stats.wasm bazel-bin/extensions/stats.compiled.wasm
 	bazel-bin/external/envoy/test/tools/wee8_compile/wee8_compile_tool bazel-bin/extensions/toss_stats.wasm bazel-bin/extensions/toss_stats.compiled.wasm
 	bazel-bin/external/envoy/test/tools/wee8_compile/wee8_compile_tool bazel-bin/extensions/metadata_exchange.wasm bazel-bin/extensions/metadata_exchange.compiled.wasm
 	bazel-bin/external/envoy/test/tools/wee8_compile/wee8_compile_tool bazel-bin/extensions/attributegen.wasm bazel-bin/extensions/attributegen.compiled.wasm
-	bazel-bin/external/envoy/test/tools/wee8_compile/wee8_compile_tool bazel-bin/extensions/basic_auth.wasm bazel-bin/extensions/basic_auth.compiled.wasm
 
 build_toss_wasm:
 	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_REL) //extensions:toss_stats.wasm
@@ -147,12 +145,6 @@ lint: lint-copyright-banner format-go lint-go tidy-go lint-scripts
 protoc = protoc -I common-protos -I extensions
 protoc_gen_docs_plugin := --docs_out=warnings=true,per_file=true,mode=html_fragment_with_front_matter:$(repo_dir)/
 
-basic_auth_path := extensions/basic_auth
-basic_auth_protos := $(wildcard $(basic_auth_path)/*.proto)
-basic_auth_docs := $(basic_auth_protos:.proto=.pb.html)
-$(basic_auth_docs): $(basic_auth_protos)
-	@$(protoc) -I ./extensions $(protoc_gen_docs_plugin)$(basic_auth_path) $^
-
 attributegen_path := extensions/attributegen
 attributegen_protos := $(wildcard $(attributegen_path)/*.proto)
 attributegen_docs := $(attributegen_protos:.proto=.pb.html)
@@ -183,7 +175,7 @@ accesslog_policy_docs := $(accesslog_policy_protos:.proto=.pb.html)
 $(accesslog_policy_docs): $(accesslog_policy_protos)
 	@$(protoc) -I ./extensions $(protoc_gen_docs_plugin)$(accesslog_policy_path) $^
 
-extensions-docs:  $(basic_auth_docs) $(attributegen_docs) $(metadata_exchange_docs) $(stats_docs) $(stackdriver_docs) $(accesslog_policy_docs)
+extensions-docs:  $(attributegen_docs) $(metadata_exchange_docs) $(stats_docs) $(stackdriver_docs) $(accesslog_policy_docs)
 
 deb:
 	export PATH=$(PATH) CC=$(CC) CXX=$(CXX) && bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_CONFIG_REL) //tools/deb:istio-proxy

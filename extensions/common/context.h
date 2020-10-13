@@ -59,13 +59,6 @@ constexpr std::string_view kLatest = "latest";
 const std::set<std::string> kGrpcContentTypes{
     "application/grpc", "application/grpc+proto", "application/grpc+json"};
 
-const std::set<std::string> kDefaultLabels{
-    "app",
-    "version",
-    "service.istio.io/canonical-name",
-    "service.istio.io/canonical-revision",
-};
-
 enum class ServiceAuthenticationPolicy : int64_t {
   Unspecified = 0,
   None = 1,
@@ -137,6 +130,8 @@ struct RequestInfo {
   // The path portion of the URL without the query string.
   std::string request_url_path;
 
+  std::string upstream_transport_failure_reason;
+
   // Service authentication policy (NONE, MUTUAL_TLS)
   ServiceAuthenticationPolicy service_auth_policy =
       ServiceAuthenticationPolicy::Unspecified;
@@ -158,7 +153,7 @@ struct RequestInfo {
   std::string route_name;
   std::string upstream_host;
   std::string upstream_cluster;
-  std::string request_serever_name;
+  std::string requested_server_name;
   std::string x_envoy_original_path;
   std::string x_envoy_original_dst_host;
 
@@ -206,13 +201,13 @@ enum class TrafficDirection : int64_t {
 TrafficDirection getTrafficDirection();
 
 // Convenience routine to create an empty node flatbuffer.
-void extractEmptyNodeFlatBuffer(std::string* out);
+flatbuffers::DetachedBuffer extractEmptyNodeFlatBuffer();
 
-// Extra partial local node metadata into a flatbuffer.
-// This populates a subset of nested labels and platform metadata to avoid
-// parsing a protobuf from the host.
-// See https://github.com/envoyproxy/envoy-wasm/issues/485.
-bool extractPartialLocalNodeFlatBuffer(std::string* out);
+// Extract local node metadata into a flatbuffer. Detached buffer owns the
+// underlying heap-allocated memory. Note that std::string is inappropriate here
+// because its memory is inlined for short strings and causes a misaligned
+// address access.
+flatbuffers::DetachedBuffer extractLocalNodeFlatBuffer();
 
 // Returns flatbuffer schema for node info.
 std::string_view nodeInfoSchema();

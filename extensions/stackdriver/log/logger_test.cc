@@ -105,6 +105,7 @@ const ::Wasm::Common::FlatNode& peerNodeInfo(
   request_info.start_time = 0;
   request_info.request_operation = "GET";
   request_info.destination_service_host = "httpbin.org";
+  request_info.destination_service_name = "httpbin";
   request_info.response_flag = "-";
   request_info.request_protocol = "HTTP";
   request_info.destination_principal = "destination_principal";
@@ -128,7 +129,7 @@ const ::Wasm::Common::FlatNode& peerNodeInfo(
   request_info.upstream_cluster =
       "inbound|9080|http|server.default.svc.cluster.local";
   request_info.upstream_host = "1.1.1.1:1000";
-  request_info.request_serever_name = "server.com";
+  request_info.requested_server_name = "server.com";
   request_info.x_envoy_original_dst_host = "tmp.com";
   request_info.x_envoy_original_path = "/tmp";
   return request_info;
@@ -168,6 +169,7 @@ std::string write_audit_request_json = R"({
         "labels":{
            "destination_principal":"destination_principal",
            "destination_service_host":"httpbin.org",
+           "destination_service_name":"httpbin",
            "request_id":"123",
            "source_namespace":"test_peer_namespace",
            "source_principal":"source_principal",
@@ -217,6 +219,7 @@ std::string write_log_request_json = R"({
            "source_name":"test_peer_pod",
            "destination_principal":"destination_principal",
            "destination_service_host":"httpbin.org",
+           "destination_service_name":"httpbin",
            "request_id":"123",
            "source_namespace":"test_peer_namespace",
            "source_principal":"source_principal",

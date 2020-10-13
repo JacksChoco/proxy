@@ -55,7 +55,7 @@ using ::Wasm::Common::TCPConnectionState;
 
 constexpr char kStackdriverExporter[] = "stackdriver_exporter";
 constexpr char kExporterRegistered[] = "registered";
-constexpr int kDefaultLogExportMilliseconds = 10000;  // 10s
+constexpr int kDefaultTickerMilliseconds = 10000;  // 10s
 
 namespace {
 
@@ -70,14 +70,14 @@ int getMonitoringExportInterval() {
   return 60;
 }
 
-// Get logging export interval from node metadata in milliseconds. Returns 60
+// Get proxy timer interval from node metadata in milliseconds. Returns 10
 // seconds if interval is not found in metadata.
-int getLoggingExportIntervalMilliseconds() {
+int getProxyTickerIntervalMilliseconds() {
   std::string interval_s = "";
-  if (getValue({"node", "metadata", kLoggingExportIntervalKey}, &interval_s)) {
+  if (getValue({"node", "metadata", kProxyTickerIntervalKey}, &interval_s)) {
     return std::stoi(interval_s) * 1000;
   }
-  return kDefaultLogExportMilliseconds;
+  return kDefaultTickerMilliseconds;
 }
 
 // Get logging export interval from node metadata in nanoseconds. Returns 60
@@ -169,25 +169,28 @@ void clearTcpMetrics(::Wasm::Common::RequestInfo& request_info) {
 
 // Get local node metadata. If mesh id is not filled or does not exist,
 // fall back to default format `proj-<project-number>`.
-void getLocalNodeMetadata(google::protobuf::Struct* node_metadata) {
-  if (!getMessageValue({"node", "metadata"}, node_metadata)) {
-    return;
-  }
-  const auto mesh_id_it = node_metadata->fields().find("MESH_ID");
-  if (mesh_id_it != node_metadata->fields().end() &&
+flatbuffers::DetachedBuffer getLocalNodeMetadata() {
+  google::protobuf::Struct node;
+  auto local_node_info = ::Wasm::Common::extractLocalNodeFlatBuffer();
+  ::Wasm::Common::extractStructFromNodeFlatBuffer(
+      *flatbuffers::GetRoot<::Wasm::Common::FlatNode>(local_node_info.data()),
+      &node);
+  const auto mesh_id_it = node.fields().find("MESH_ID");
+  if (mesh_id_it != node.fields().end() &&
       !mesh_id_it->second.string_value().empty() &&
       absl::StartsWith(mesh_id_it->second.string_value(), "proj-")) {
-    return;
+    // do nothing
+  } else {
+    // Insert or update mesh id to default format as it is missing, empty, or
+    // not properly set.
+    auto project_number = getProjectNumber();
+    auto* mesh_id_field =
+        (*node.mutable_fields())["MESH_ID"].mutable_string_value();
+    if (!project_number.empty()) {
+      *mesh_id_field = absl::StrCat("proj-", project_number);
+    }
   }
-
-  // Insert or update mesh id to default format as it is missing, empty, or not
-  // properly set.
-  auto project_number = getProjectNumber();
-  auto* mesh_id_field =
-      (*node_metadata->mutable_fields())["MESH_ID"].mutable_string_value();
-  if (!project_number.empty()) {
-    *mesh_id_field = absl::StrCat("proj-", project_number);
-  }
+  return ::Wasm::Common::extractNodeFlatBufferFromStruct(node);
 }
 
 }  // namespace
@@ -201,8 +204,8 @@ bool StackdriverRootContext::onConfigure(size_t size) {
 
 bool StackdriverRootContext::configure(size_t configuration_size) {
   // onStart is called prior to onConfigure
-  proxy_set_tick_period_milliseconds(getLoggingExportIntervalMilliseconds());
-
+  int proxy_tick_ms = getProxyTickerIntervalMilliseconds();
+  proxy_set_tick_period_milliseconds(getProxyTickerIntervalMilliseconds());
   // Parse configuration JSON string.
   std::string configuration = "{}";
   if (configuration_size > 0) {
@@ -221,11 +224,21 @@ bool StackdriverRootContext::configure(size_t configuration_size) {
             configuration + ", " + status.message().ToString());
     return false;
   }
-  google::protobuf::Struct node;
-  getLocalNodeMetadata(&node);
-  if (!::Wasm::Common::extractLocalNodeFlatBuffer(&local_node_info_, node)) {
-    logWarn("cannot extract local node metadata");
-    return false;
+  local_node_info_ = getLocalNodeMetadata();
+
+  if (config_.has_log_report_duration()) {
+    log_report_duration_nanos_ =
+        ::google::protobuf::util::TimeUtil::DurationToNanoseconds(
+            config_.log_report_duration());
+    long int proxy_tick_ns = proxy_tick_ms * 1000;
+    if (log_report_duration_nanos_ < (proxy_tick_ns) ||
+        log_report_duration_nanos_ % proxy_tick_ns != 0) {
+      logWarn(absl::StrCat(
+          "The duration set is less than or not a multiple of default timer's "
+          "period. Default Timer MS: ",
+          proxy_tick_ms,
+          " Lod Duration Nanosecond: ", log_report_duration_nanos_));
+    }
   }
 
   direction_ = ::Wasm::Common::getTrafficDirection();
@@ -258,7 +271,12 @@ bool StackdriverRootContext::configure(size_t configuration_size) {
     logging_stub_option.default_endpoint = kLoggingService;
     auto exporter = std::make_unique<ExporterImpl>(this, logging_stub_option);
     // logger takes ownership of exporter.
-    logger_ = std::make_unique<Logger>(local_node, std::move(exporter));
+    if (config_.max_log_batch_size_in_bytes() > 0) {
+      logger_ = std::make_unique<Logger>(local_node, std::move(exporter),
+                                         config_.max_log_batch_size_in_bytes());
+    } else {
+      logger_ = std::make_unique<Logger>(local_node, std::move(exporter));
+    }
     tcp_log_entry_timeout_ = getTcpLogEntryTimeoutNanoseconds();
   }
 
@@ -293,6 +311,16 @@ bool StackdriverRootContext::configure(size_t configuration_size) {
   } else {
     edge_new_report_duration_nanos_ = kDefaultEdgeNewReportDurationNanoseconds;
   }
+  long int proxy_tick_ns = proxy_tick_ms * 1000;
+  if (edge_new_report_duration_nanos_ < proxy_tick_ns ||
+      edge_new_report_duration_nanos_ % proxy_tick_ns != 0) {
+    logWarn(absl::StrCat(
+        "The duration set is less than or not a multiple of default timer's "
+        "period. "
+        "Default Timer MS: ",
+        proxy_tick_ms,
+        " Edge Report Duration Nanosecond: ", edge_new_report_duration_nanos_));
+  }
 
   // Register OC Stackdriver exporter and views to be exported.
   // Note exporter and views are global singleton so they should only be
@@ -319,8 +347,8 @@ bool StackdriverRootContext::configure(size_t configuration_size) {
 bool StackdriverRootContext::onStart(size_t) { return true; }
 
 void StackdriverRootContext::onTick() {
+  auto cur = static_cast<long int>(getCurrentTimeNanoseconds());
   if (enableEdgeReporting()) {
-    auto cur = static_cast<long int>(getCurrentTimeNanoseconds());
     if ((cur - last_edge_epoch_report_call_nanos_) >
         edge_epoch_report_duration_nanos_) {
       // end of epoch
@@ -352,8 +380,10 @@ void StackdriverRootContext::onTick() {
     }
   }
 
-  if (enableAccessLog()) {
+  if (enableAccessLog() &&
+      (cur - last_log_report_call_nanos_ > log_report_duration_nanos_)) {
     logger_->exportLogEntry(/* is_on_done= */ false);
+    last_log_report_call_nanos_ = cur;
   }
 }
 
@@ -386,7 +416,8 @@ void StackdriverRootContext::record() {
       {outbound ? kUpstreamMetadataKey : kDownstreamMetadataKey}, &peer);
   const ::Wasm::Common::FlatNode& peer_node =
       *flatbuffers::GetRoot<::Wasm::Common::FlatNode>(
-          peer_found ? peer.data() : empty_node_info_.data());
+          peer_found ? reinterpret_cast<const uint8_t*>(peer.data())
+                     : empty_node_info_.data());
   const ::Wasm::Common::FlatNode& local_node = getLocalNode();
   const ::Wasm::Common::FlatNode& destination_node_info =
       outbound ? peer_node : local_node;
@@ -437,7 +468,8 @@ bool StackdriverRootContext::recordTCP(uint32_t id) {
       {outbound ? kUpstreamMetadataKey : kDownstreamMetadataKey}, &peer);
   const ::Wasm::Common::FlatNode& peer_node =
       *flatbuffers::GetRoot<::Wasm::Common::FlatNode>(
-          peer_found ? peer.data() : empty_node_info_.data());
+          peer_found ? reinterpret_cast<const uint8_t*>(peer.data())
+                     : empty_node_info_.data());
   const ::Wasm::Common::FlatNode& local_node = getLocalNode();
   const ::Wasm::Common::FlatNode& destination_node_info =
       outbound ? peer_node : local_node;
